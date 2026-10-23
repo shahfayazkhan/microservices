@@ -1,0 +1,68 @@
+# notification-service — Deployment (runs the pods) + Service (stable DNS name + load balancing).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notification-service
+  namespace: shop
+  labels: { app: notification-service, part-of: shop }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: notification-service }
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxSurge: 1, maxUnavailable: 0 } # zero-downtime deploys
+  template:
+    metadata:
+      labels: { app: notification-service, part-of: shop }
+    spec:
+      containers:
+        - name: notification-service
+          image: shop/notification-service:1.0.0
+          imagePullPolicy: IfNotPresent # use the image you built locally
+          ports:
+            - containerPort: 3005
+          envFrom:
+            - configMapRef: { name: app-config }
+          env:
+            - { name: SERVICE_NAME, value: "notification-service" }
+            - { name: PORT, value: "3005" }
+            - name: MONGO_USER
+              valueFrom: { secretKeyRef: { name: app-secrets, key: MONGO_ROOT_USERNAME } }
+            - name: MONGO_PASSWORD
+              valueFrom: { secretKeyRef: { name: app-secrets, key: MONGO_ROOT_PASSWORD } }
+            # $(VAR) expands variables defined ABOVE in this list
+            - name: MONGO_URI
+              value: "mongodb://$(MONGO_USER):$(MONGO_PASSWORD)@$(MONGO_HOST)/notification_db?authSource=admin"
+          # startupProbe: give the app time to connect to MongoDB + Kafka before other probes start
+          startupProbe:
+            httpGet: { path: /health, port: 3005 }
+            periodSeconds: 5
+            failureThreshold: 30
+          # readinessProbe: only send traffic when DB + Kafka are connected
+          readinessProbe:
+            httpGet: { path: /ready, port: 3005 }
+            periodSeconds: 5
+            failureThreshold: 3
+          # livenessProbe: restart the container if the process hangs
+          livenessProbe:
+            httpGet: { path: /health, port: 3005 }
+            periodSeconds: 15
+            failureThreshold: 3
+          resources:
+            requests: { cpu: 50m, memory: 96Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+---
+# Internal only (ClusterIP): reachable as http://notification-service:3005 inside the cluster.
+apiVersion: v1
+kind: Service
+metadata:
+  name: notification-service
+  namespace: shop
+  labels: { app: notification-service }
+spec:
+  type: ClusterIP
+  selector: { app: notification-service }
+  ports:
+    - port: 3005
+      targetPort: 3005

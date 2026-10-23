@@ -1,0 +1,6 @@
+# A Namespace is a "folder" inside the cluster. Everything for this project lives in `shop`,
+# so `kubectl delete namespace shop` removes it all in one go.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: shop

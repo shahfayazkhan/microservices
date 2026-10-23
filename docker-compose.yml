@@ -1,0 +1,140 @@
+# Local development stack: infra + all microservices.
+#   docker compose up --build -d
+# Gateway: http://localhost:8080   Mail inbox (Mailpit): http://localhost:8025
+
+x-service-env: &service-env
+  KAFKA_BROKERS: kafka:9092
+  JWT_SECRET: dev-secret-change-me
+
+x-service-deps: &service-deps
+  mongodb: { condition: service_healthy }
+  kafka: { condition: service_healthy }
+
+services:
+  # ---------------- Infrastructure ----------------
+  mongodb:
+    image: mongo:7
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: rootpassword
+    ports: ["27017:27017"]
+    volumes: [mongo-data:/data/db]
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  kafka:
+    image: apache/kafka:3.9.1 # KRaft mode: no Zookeeper needed
+    restart: unless-stopped
+    ports: ["29092:29092"] # for tools / services running on your Mac (localhost:29092)
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_NUM_PARTITIONS: 3
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+    volumes: [kafka-data:/var/lib/kafka/data]
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 15s
+
+  mailpit: # fake SMTP server + web inbox to see every email sent
+    image: axllent/mailpit:v1.27
+    restart: unless-stopped
+    ports: ["8025:8025", "1025:1025"]
+
+  # ---------------- Microservices ----------------
+  api-gateway:
+    build: ./services/api-gateway
+    image: shop/api-gateway:1.0.0
+    restart: unless-stopped
+    ports: ["8080:8080"]
+    environment:
+      <<: *service-env
+      USER_SERVICE_URL: http://user-service:3001
+      PRODUCT_SERVICE_URL: http://product-service:3002
+      ORDER_SERVICE_URL: http://order-service:3003
+      PAYMENT_SERVICE_URL: http://payment-service:3004
+      NOTIFICATION_SERVICE_URL: http://notification-service:3005
+    depends_on: [user-service, product-service, order-service, payment-service, notification-service]
+
+  user-service:
+    build: ./services/user-service
+    image: shop/user-service:1.0.0
+    restart: unless-stopped
+    environment:
+      <<: *service-env
+      SERVICE_NAME: user-service
+      PORT: 3001
+      MONGO_URI: mongodb://root:rootpassword@mongodb:27017/user_db?authSource=admin
+      ADMIN_EMAIL: admin@shop.local
+      ADMIN_PASSWORD: Admin@123
+    depends_on: *service-deps
+
+  product-service:
+    build: ./services/product-service
+    image: shop/product-service:1.0.0
+    restart: unless-stopped
+    environment:
+      <<: *service-env
+      SERVICE_NAME: product-service
+      PORT: 3002
+      MONGO_URI: mongodb://root:rootpassword@mongodb:27017/product_db?authSource=admin
+    depends_on: *service-deps
+
+  order-service:
+    build: ./services/order-service
+    image: shop/order-service:1.0.0
+    restart: unless-stopped
+    environment:
+      <<: *service-env
+      SERVICE_NAME: order-service
+      PORT: 3003
+      MONGO_URI: mongodb://root:rootpassword@mongodb:27017/order_db?authSource=admin
+      PRODUCT_SERVICE_URL: http://product-service:3002
+    depends_on: *service-deps
+
+  payment-service:
+    build: ./services/payment-service
+    image: shop/payment-service:1.0.0
+    restart: unless-stopped
+    environment:
+      <<: *service-env
+      SERVICE_NAME: payment-service
+      PORT: 3004
+      MONGO_URI: mongodb://root:rootpassword@mongodb:27017/payment_db?authSource=admin
+      PAYMENT_MAX_AMOUNT: 5000
+    depends_on: *service-deps
+
+  notification-service:
+    build: ./services/notification-service
+    image: shop/notification-service:1.0.0
+    restart: unless-stopped
+    environment:
+      <<: *service-env
+      SERVICE_NAME: notification-service
+      PORT: 3005
+      MONGO_URI: mongodb://root:rootpassword@mongodb:27017/notification_db?authSource=admin
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+      MAIL_FROM: "Shop <no-reply@shop.local>"
+    depends_on: *service-deps
+
+volumes:
+  mongo-data:
+  kafka-data:

@@ -1,0 +1,35 @@
+# ConfigMap = non-secret settings, injected into pods as environment variables.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: shop
+data:
+  NODE_ENV: "production"
+  KAFKA_BROKERS: "kafka:9092"        # "kafka" is the Service name -> cluster DNS resolves it
+  MONGO_HOST: "mongodb:27017"
+  USER_SERVICE_URL: "http://user-service:3001"
+  PRODUCT_SERVICE_URL: "http://product-service:3002"
+  ORDER_SERVICE_URL: "http://order-service:3003"
+  PAYMENT_SERVICE_URL: "http://payment-service:3004"
+  NOTIFICATION_SERVICE_URL: "http://notification-service:3005"
+  JWT_EXPIRES_IN: "1d"
+  PAYMENT_MAX_AMOUNT: "5000"
+  SMTP_HOST: "mailpit"
+  SMTP_PORT: "1025"
+  MAIL_FROM: "Shop <no-reply@shop.local>"
+---
+# Secret = sensitive values. `stringData` lets you write plain text; K8s stores it base64-encoded.
+# NOTE: base64 is NOT encryption. For real projects use Sealed Secrets / External Secrets / Vault.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: app-secrets
+  namespace: shop
+type: Opaque
+stringData:
+  JWT_SECRET: "change-me-to-a-long-random-string"
+  MONGO_ROOT_USERNAME: "root"
+  MONGO_ROOT_PASSWORD: "rootpassword"
+  ADMIN_EMAIL: "admin@shop.local"
+  ADMIN_PASSWORD: "Admin@123"

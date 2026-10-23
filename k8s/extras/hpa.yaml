@@ -1,0 +1,25 @@
+# OPTIONAL — HorizontalPodAutoscaler: adds/removes order-service pods based on CPU.
+# Docker Desktop has no metrics-server by default. Install it first:
+#   kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+#   kubectl -n kube-system patch deployment metrics-server --type=json \
+#     -p='[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]'
+# Then: kubectl apply -f k8s/extras/hpa.yaml   and watch: kubectl -n shop get hpa -w
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: order-service
+  namespace: shop
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: order-service
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

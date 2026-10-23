@@ -1,0 +1,64 @@
+# MongoDB as a StatefulSet: stable name (mongodb-0) + its own persistent disk (PVC).
+# One MongoDB server, one database per microservice (user_db, order_db, ...).
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongodb
+  namespace: shop
+  labels: { app: mongodb }
+spec:
+  clusterIP: None            # headless: DNS "mongodb" points straight at the pod
+  selector: { app: mongodb }
+  ports:
+    - name: mongo
+      port: 27017
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mongodb
+  namespace: shop
+spec:
+  serviceName: mongodb
+  replicas: 1
+  selector:
+    matchLabels: { app: mongodb }
+  template:
+    metadata:
+      labels: { app: mongodb, part-of: shop }
+    spec:
+      containers:
+        - name: mongodb
+          image: mongo:7
+          ports:
+            - containerPort: 27017
+          env:
+            - name: MONGO_INITDB_ROOT_USERNAME
+              valueFrom: { secretKeyRef: { name: app-secrets, key: MONGO_ROOT_USERNAME } }
+            - name: MONGO_INITDB_ROOT_PASSWORD
+              valueFrom: { secretKeyRef: { name: app-secrets, key: MONGO_ROOT_PASSWORD } }
+          volumeMounts:
+            - name: data
+              mountPath: /data/db
+          readinessProbe:
+            exec: { command: ["mongosh", "--quiet", "--eval", "db.adminCommand('ping')"] }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            exec: { command: ["mongosh", "--quiet", "--eval", "db.adminCommand('ping')"] }
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 5
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: "1", memory: 1Gi }
+  # Each replica gets its own PersistentVolumeClaim -> data survives pod restarts.
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 2Gi

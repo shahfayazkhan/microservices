@@ -1,0 +1,47 @@
+# Mailpit: fake SMTP server + web inbox. Every email the notification-service sends lands here.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mailpit
+  namespace: shop
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: mailpit }
+  template:
+    metadata:
+      labels: { app: mailpit, part-of: shop }
+    spec:
+      containers:
+        - name: mailpit
+          image: axllent/mailpit:v1.27
+          ports:
+            - { name: smtp, containerPort: 1025 }
+            - { name: http, containerPort: 8025 }
+          resources:
+            requests: { cpu: 20m, memory: 32Mi }
+            limits: { cpu: 200m, memory: 128Mi }
+---
+# Internal SMTP endpoint used by notification-service (mailpit:1025)
+apiVersion: v1
+kind: Service
+metadata:
+  name: mailpit
+  namespace: shop
+spec:
+  selector: { app: mailpit }
+  ports:
+    - { name: smtp, port: 1025, targetPort: 1025 }
+    - { name: http, port: 8025, targetPort: 8025 }
+---
+# Web inbox exposed on your Mac: http://localhost:8025 (Docker Desktop maps LoadBalancer -> localhost)
+apiVersion: v1
+kind: Service
+metadata:
+  name: mailpit-ui
+  namespace: shop
+spec:
+  type: LoadBalancer
+  selector: { app: mailpit }
+  ports:
+    - { name: http, port: 8025, targetPort: 8025 }

@@ -1,0 +1,21 @@
+{
+  "name": "product-service",
+  "version": "1.0.0",
+  "description": "Product catalog and inventory (stock reservations)",
+  "main": "src/index.js",
+  "private": true,
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "helmet": "^8.1.0",
+    "kafkajs": "^2.2.4",
+    "mongoose": "^8.16.0",
+    "morgan": "^1.10.0"
+  }
+}
